@@ -24,10 +24,104 @@ const linkSchema = new mongoose.Schema({
   destinationUrl: { type: String, required: true },
   clicks: { type: Number, default: 0 },
   createdAt: { type: Date, default: Date.now },
-  lastClicked: { type: Date }
+  lastClicked: { type: Date },
+  clickRecords: [{
+    timestamp: { type: Date, default: Date.now },
+    ipAddress: String,
+    country: String,
+    city: String,
+    region: String,
+    latitude: Number,
+    longitude: Number,
+    userAgent: String,
+    browser: String,
+    os: String,
+    device: String,
+    referrer: String
+  }]
 });
 
 const Link = mongoose.model('Link', linkSchema);
+
+// Helper function to parse user agent
+function parseUserAgent(userAgent) {
+  const ua = userAgent.toLowerCase();
+  
+  // Detect browser
+  let browser = 'Unknown';
+  if (ua.includes('chrome') && !ua.includes('edg')) browser = 'Chrome';
+  else if (ua.includes('safari') && !ua.includes('chrome')) browser = 'Safari';
+  else if (ua.includes('firefox')) browser = 'Firefox';
+  else if (ua.includes('edg')) browser = 'Edge';
+  else if (ua.includes('opera') || ua.includes('opr')) browser = 'Opera';
+  
+  // Detect OS
+  let os = 'Unknown';
+  if (ua.includes('windows')) os = 'Windows';
+  else if (ua.includes('mac')) os = 'macOS';
+  else if (ua.includes('linux')) os = 'Linux';
+  else if (ua.includes('android')) os = 'Android';
+  else if (ua.includes('iphone') || ua.includes('ipad')) os = 'iOS';
+  
+  // Detect device type
+  let device = 'Desktop';
+  if (ua.includes('mobile')) device = 'Mobile';
+  else if (ua.includes('tablet') || ua.includes('ipad')) device = 'Tablet';
+  
+  return { browser, os, device };
+}
+
+// Helper function to get IP address from request
+function getClientIp(req) {
+  return req.headers['x-forwarded-for']?.split(',')[0] || 
+         req.headers['x-real-ip'] || 
+         req.connection.remoteAddress || 
+         req.socket.remoteAddress ||
+         'Unknown';
+}
+
+// Helper function to get geolocation from IP using free API
+async function getGeolocation(ip) {
+  try {
+    // Remove IPv6 prefix if present
+    const cleanIp = ip.replace('::ffff:', '');
+    
+    // Skip localhost/private IPs
+    if (cleanIp === '127.0.0.1' || cleanIp === '::1' || cleanIp === 'Unknown') {
+      return {
+        country: 'Unknown',
+        city: 'Unknown',
+        region: 'Unknown',
+        latitude: null,
+        longitude: null
+      };
+    }
+    
+    // Use ip-api.com free geolocation service
+    const response = await fetch(`http://ip-api.com/json/${cleanIp}`);
+    const data = await response.json();
+    
+    if (data.status === 'success') {
+      return {
+        country: data.country || 'Unknown',
+        city: data.city || 'Unknown',
+        region: data.regionName || 'Unknown',
+        latitude: data.lat || null,
+        longitude: data.lon || null
+      };
+    }
+  } catch (error) {
+    console.error('Geolocation error:', error);
+  }
+  
+  return {
+    country: 'Unknown',
+    city: 'Unknown',
+    region: 'Unknown',
+    latitude: null,
+    longitude: null
+  };
+}
 
 // API Routes
 
@@ -103,17 +197,68 @@ app.delete('/api/links/:linkId', async (req, res) => {
   }
 });
 
+// Get detailed click records for a specific link
+app.get('/api/links/:linkId/records', async (req, res) => {
+  try {
+    const { linkId } = req.params;
+    const link = await Link.findOne({ linkId });
+    
+    if (!link) {
+      return res.status(404).json({ success: false, error: 'Link not found' });
+    }
+    
+    res.json({ 
+      success: true, 
+      link: {
+        name: link.name,
+        destinationUrl: link.destinationUrl,
+        clicks: link.clicks,
+        createdAt: link.createdAt
+      },
+      records: link.clickRecords 
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Track click and redirect
 app.get('/track/:linkId', async (req, res) => {
   try {
     const { linkId } = req.params;
+    
+    // Get tracking data
+    const ipAddress = getClientIp(req);
+    const userAgent = req.headers['user-agent'] || 'Unknown';
+    const referrer = req.headers['referer'] || req.headers['referrer'] || 'Direct';
+    const { browser, os, device } = parseUserAgent(userAgent);
+    
+    // Get geolocation
+    const geoData = await getGeolocation(ipAddress);
+    
+    // Create click record
+    const clickRecord = {
+      timestamp: new Date(),
+      ipAddress: ipAddress,
+      country: geoData.country,
+      city: geoData.city,
+      region: geoData.region,
+      latitude: geoData.latitude,
+      longitude: geoData.longitude,
+      userAgent: userAgent,
+      browser: browser,
+      os: os,
+      device: device,
+      referrer: referrer
+    };
     
     // Find and update link
     const link = await Link.findOneAndUpdate(
       { linkId },
       { 
         $inc: { clicks: 1 },
-        $set: { lastClicked: new Date() }
+        $set: { lastClicked: new Date() },
+        $push: { clickRecords: clickRecord }
       },
       { new: true }
     );
@@ -125,6 +270,7 @@ app.get('/track/:linkId', async (req, res) => {
     // Redirect to destination
     res.redirect(link.destinationUrl);
   } catch (error) {
+    console.error('Tracking error:', error);
     res.status(500).send('Error processing tracking link');
   }
 });
