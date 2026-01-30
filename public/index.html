@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Link Tracker Pro</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .card {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        input[type="text"],
+        input[type="url"] {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input[type="text"]:focus,
+        input[type="url"]:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .generated-link {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            display: none;
+        }
+
+        .generated-link.show {
+            display: block;
+        }
+
+        .link-display {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .link-text {
+            flex: 1;
+            padding: 10px;
+            background: white;
+            border: 2px solid #667eea;
+            border-radius: 6px;
+            font-family: monospace;
+            word-break: break-all;
+        }
+
+        .copy-btn {
+            background: #28a745;
+            padding: 10px 20px;
+            white-space: nowrap;
+        }
+
+        .copy-btn:hover {
+            background: #218838;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+
+        .link-list {
+            margin-top: 20px;
+        }
+
+        .link-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 4px solid #667eea;
+        }
+
+        .link-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .link-name {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .click-count {
+            background: #667eea;
+            color: white;
+            padding: 5px 15px;
+            border-radius: 20px;
+            font-size: 0.9em;
+        }
+
+        .link-url {
+            font-size: 0.9em;
+            color: #666;
+            word-break: break-all;
+            margin-bottom: 5px;
+        }
+
+        .tracked-url {
+            font-size: 0.85em;
+            color: #28a745;
+            font-family: monospace;
+            cursor: pointer;
+        }
+
+        .tracked-url:hover {
+            text-decoration: underline;
+        }
+
+        .alert {
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            display: none;
+        }
+
+        .alert.show {
+            display: block;
+        }
+
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            background: #e0e0e0;
+            border: none;
+            border-radius: 8px 8px 0 0;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.3s;
+        }
+
+        .tab.active {
+            background: white;
+            color: #667eea;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .delete-btn {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 5px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.85em;
+            margin-left: 10px;
+        }
+
+        .delete-btn:hover {
+            background: #c82333;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔗 Link Tracker Pro</h1>
+
+        <div class="tabs">
+            <button class="tab active" onclick="switchTab('create')">Create Link</button>
+            <button class="tab" onclick="switchTab('dashboard')">Dashboard</button>
+        </div>
+
+        <!-- Create Link Tab -->
+        <div id="create-tab" class="tab-content active">
+            <div class="card">
+                <h2 style="margin-bottom: 20px; color: #333;">Create Tracking Link</h2>
+                
+                <div class="alert alert-success" id="successAlert">
+                    Link created successfully! 🎉
+                </div>
+
+                <form id="linkForm">
+                    <div class="form-group">
+                        <label for="linkName">Link Name</label>
+                        <input type="text" id="linkName" placeholder="e.g., Summer Campaign" required>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="destinationUrl">Destination URL</label>
+                        <input type="url" id="destinationUrl" placeholder="https://example.com" required>
+                    </div>
+
+                    <button type="submit" class="btn">Generate Tracking Link</button>
+                </form>
+
+                <div class="generated-link" id="generatedLink">
+                    <h3 style="margin-bottom: 15px; color: #333;">Your Tracking Link:</h3>
+                    <div class="link-display">
+                        <div class="link-text" id="trackingLinkText"></div>
+                        <button class="btn copy-btn" type="button" onclick="copyLink()">Copy</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Dashboard Tab -->
+        <div id="dashboard-tab" class="tab-content">
+            <div class="card">
+                <h2 style="margin-bottom: 20px; color: #333;">Analytics Dashboard</h2>
+                
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalLinks">0</div>
+                        <div class="stat-label">Total Links</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="totalClicks">0</div>
+                        <div class="stat-label">Total Clicks</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="avgClicks">0</div>
+                        <div class="stat-label">Avg Clicks/Link</div>
+                    </div>
+                </div>
+
+                <h3 style="margin-bottom: 15px; color: #333;">Your Tracking Links</h3>
+                <div class="link-list" id="linkList">
+                    <div class="loading">Loading...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // API Base URL - change this when deploying
+        const API_BASE = window.location.origin;
+
+        // Form submission
+        document.getElementById('linkForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const linkName = document.getElementById('linkName').value;
+            const destinationUrl = document.getElementById('destinationUrl').value;
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/links`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        name: linkName,
+                        destinationUrl: destinationUrl
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Display the tracking link
+                    document.getElementById('trackingLinkText').textContent = data.trackingUrl;
+                    document.getElementById('generatedLink').classList.add('show');
+                    
+                    // Show success alert
+                    const alert = document.getElementById('successAlert');
+                    alert.classList.add('show');
+                    setTimeout(() => alert.classList.remove('show'), 3000);
+                    
+                    // Reset form
+                    this.reset();
+                } else {
+                    alert('Error creating link: ' + data.error);
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        });
+
+        // Copy link function
+        function copyLink() {
+            const linkText = document.getElementById('trackingLinkText').textContent;
+            navigator.clipboard.writeText(linkText).then(() => {
+                const btn = event.target;
+                const originalText = btn.textContent;
+                btn.textContent = 'Copied!';
+                setTimeout(() => btn.textContent = originalText, 2000);
+            });
+        }
+
+        // Switch tabs
+        function switchTab(tabName) {
+            // Update tab buttons
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            // Update tab content
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.getElementById(tabName + '-tab').classList.add('active');
+            
+            if (tabName === 'dashboard') {
+                loadDashboard();
+            }
+        }
+
+        // Load dashboard data
+        async function loadDashboard() {
+            try {
+                // Load analytics
+                const analyticsRes = await fetch(`${API_BASE}/api/analytics`);
+                const analyticsData = await analyticsRes.json();
+                
+                if (analyticsData.success) {
+                    document.getElementById('totalLinks').textContent = analyticsData.analytics.totalLinks;
+                    document.getElementById('totalClicks').textContent = analyticsData.analytics.totalClicks;
+                    document.getElementById('avgClicks').textContent = analyticsData.analytics.avgClicks;
+                }
+                
+                // Load links
+                const linksRes = await fetch(`${API_BASE}/api/links`);
+                const linksData = await linksRes.json();
+                
+                const linkList = document.getElementById('linkList');
+                
+                if (linksData.success && linksData.links.length > 0) {
+                    linkList.innerHTML = linksData.links.map(link => {
+                        const trackingUrl = `${API_BASE}/track/${link.linkId}`;
+                        return `
+                            <div class="link-item">
+                                <div class="link-header">
+                                    <span class="link-name">${escapeHtml(link.name)}</span>
+                                    <div>
+                                        <span class="click-count">${link.clicks} clicks</span>
+                                        <button class="delete-btn" onclick="deleteLink('${link.linkId}')">Delete</button>
+                                    </div>
+                                </div>
+                                <div class="link-url">→ ${escapeHtml(link.destinationUrl)}</div>
+                                <div class="tracked-url" onclick="copyToClipboard('${trackingUrl}')">
+                                    Tracking: ${trackingUrl}
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    linkList.innerHTML = '<p style="text-align: center; color: #999; padding: 20px;">No tracking links yet. Create your first link!</p>';
+                }
+            } catch (error) {
+                document.getElementById('linkList').innerHTML = '<p style="text-align: center; color: #dc3545; padding: 20px;">Error loading data</p>';
+            }
+        }
+
+        // Delete link
+        async function deleteLink(linkId) {
+            if (confirm('Are you sure you want to delete this tracking link?')) {
+                try {
+                    const response = await fetch(`${API_BASE}/api/links/${linkId}`, {
+                        method: 'DELETE'
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        loadDashboard();
+                    } else {
+                        alert('Error deleting link');
+                    }
+                } catch (error) {
+                    alert('Error: ' + error.message);
+                }
+            }
+        }
+
+        // Copy to clipboard utility
+        function copyToClipboard(text) {
+            navigator.clipboard.writeText(text).then(() => {
+                alert('Tracking link copied to clipboard!');
+            });
+        }
+
+        // Escape HTML to prevent XSS
+        function escapeHtml(unsafe) {
+            return unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        // Load dashboard on page load if on dashboard tab
+        if (window.location.hash === '#dashboard') {
+            switchTab('dashboard');
+        }
+    </script>
+</body>
+</html>
