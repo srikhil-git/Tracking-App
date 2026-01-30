@@ -267,6 +267,158 @@
             padding: 20px;
             color: #666;
         }
+
+        .view-details-btn {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 5px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.85em;
+            margin-left: 10px;
+        }
+
+        .view-details-btn:hover {
+            background: #0056b3;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+            overflow-y: auto;
+        }
+
+        .modal.show {
+            display: block;
+        }
+
+        .modal-content {
+            background-color: white;
+            margin: 50px auto;
+            padding: 0;
+            border-radius: 15px;
+            width: 90%;
+            max-width: 1000px;
+            box-shadow: 0 10px 50px rgba(0,0,0,0.3);
+        }
+
+        .modal-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 30px;
+            border-radius: 15px 15px 0 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            font-size: 1.5em;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 28px;
+            cursor: pointer;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            line-height: 1;
+        }
+
+        .close-btn:hover {
+            opacity: 0.8;
+        }
+
+        .modal-body {
+            padding: 30px;
+            max-height: 70vh;
+            overflow-y: auto;
+        }
+
+        .records-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .records-table th,
+        .records-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .records-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #333;
+            position: sticky;
+            top: 0;
+        }
+
+        .records-table tr:hover {
+            background: #f8f9fa;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            font-weight: 600;
+        }
+
+        .badge-primary {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+
+        .badge-success {
+            background: #e8f5e9;
+            color: #388e3c;
+        }
+
+        .badge-info {
+            background: #e0f2f1;
+            color: #00796b;
+        }
+
+        .analytics-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .summary-item {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .summary-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .summary-label {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
@@ -334,6 +486,37 @@
                 <h3 style="margin-bottom: 15px; color: #333;">Your Tracking Links</h3>
                 <div class="link-list" id="linkList">
                     <div class="loading">Loading...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Analytics Modal -->
+    <div id="analyticsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">Click Analytics</h2>
+                <button class="close-btn" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="analytics-summary" id="analyticsSummary"></div>
+                <h3 style="margin-bottom: 15px; color: #333;">Detailed Click Records</h3>
+                <div style="overflow-x: auto;">
+                    <table class="records-table">
+                        <thead>
+                            <tr>
+                                <th>Date & Time</th>
+                                <th>Location</th>
+                                <th>IP Address</th>
+                                <th>Device</th>
+                                <th>Browser</th>
+                                <th>OS</th>
+                                <th>Referrer</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recordsTableBody">
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -438,6 +621,7 @@
                                     <span class="link-name">${escapeHtml(link.name)}</span>
                                     <div>
                                         <span class="click-count">${link.clicks} clicks</span>
+                                        <button class="view-details-btn" onclick="viewDetails('${link.linkId}')">View Details</button>
                                         <button class="delete-btn" onclick="deleteLink('${link.linkId}')">Delete</button>
                                     </div>
                                 </div>
@@ -492,6 +676,99 @@
                 .replace(/>/g, "&gt;")
                 .replace(/"/g, "&quot;")
                 .replace(/'/g, "&#039;");
+        }
+
+        // View detailed analytics for a link
+        async function viewDetails(linkId) {
+            try {
+                const response = await fetch(`${API_BASE}/api/links/${linkId}/records`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Update modal title
+                    document.getElementById('modalTitle').textContent = `Analytics: ${data.link.name}`;
+                    
+                    // Calculate analytics summary
+                    const records = data.records;
+                    const uniqueCountries = [...new Set(records.map(r => r.country))].length;
+                    const uniqueIPs = [...new Set(records.map(r => r.ipAddress))].length;
+                    const deviceCounts = records.reduce((acc, r) => {
+                        acc[r.device] = (acc[r.device] || 0) + 1;
+                        return acc;
+                    }, {});
+                    const mostUsedDevice = Object.keys(deviceCounts).reduce((a, b) => 
+                        deviceCounts[a] > deviceCounts[b] ? a : b, 'N/A');
+                    
+                    // Display summary
+                    document.getElementById('analyticsSummary').innerHTML = `
+                        <div class="summary-item">
+                            <div class="summary-value">${data.link.clicks}</div>
+                            <div class="summary-label">Total Clicks</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-value">${uniqueIPs}</div>
+                            <div class="summary-label">Unique Visitors</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-value">${uniqueCountries}</div>
+                            <div class="summary-label">Countries</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-value">${mostUsedDevice}</div>
+                            <div class="summary-label">Top Device</div>
+                        </div>
+                    `;
+                    
+                    // Display records table
+                    const tableBody = document.getElementById('recordsTableBody');
+                    if (records.length === 0) {
+                        tableBody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #999;">No clicks yet</td></tr>';
+                    } else {
+                        tableBody.innerHTML = records.slice().reverse().map(record => {
+                            const date = new Date(record.timestamp);
+                            const formattedDate = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+                            const location = record.city !== 'Unknown' 
+                                ? `${record.city}, ${record.country}`
+                                : record.country;
+                            const referrer = record.referrer === 'Direct' 
+                                ? '<span class="badge badge-info">Direct</span>'
+                                : `<span class="badge badge-primary">${escapeHtml(new URL(record.referrer).hostname)}</span>`;
+                            
+                            return `
+                                <tr>
+                                    <td>${formattedDate}</td>
+                                    <td>${escapeHtml(location)}</td>
+                                    <td><code>${escapeHtml(record.ipAddress)}</code></td>
+                                    <td><span class="badge badge-success">${escapeHtml(record.device)}</span></td>
+                                    <td>${escapeHtml(record.browser)}</td>
+                                    <td>${escapeHtml(record.os)}</td>
+                                    <td>${referrer}</td>
+                                </tr>
+                            `;
+                        }).join('');
+                    }
+                    
+                    // Show modal
+                    document.getElementById('analyticsModal').classList.add('show');
+                } else {
+                    alert('Error loading analytics');
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            }
+        }
+
+        // Close modal
+        function closeModal() {
+            document.getElementById('analyticsModal').classList.remove('show');
+        }
+
+        // Close modal when clicking outside
+        window.onclick = function(event) {
+            const modal = document.getElementById('analyticsModal');
+            if (event.target === modal) {
+                closeModal();
+            }
         }
 
         // Load dashboard on page load if on dashboard tab
