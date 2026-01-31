@@ -506,11 +506,18 @@
                         <thead>
                             <tr>
                                 <th>Date & Time</th>
-                                <th>Location</th>
+                                <th>Location (IP)</th>
+                                <th>User Location (GPS)</th>
                                 <th>IP Address</th>
+                                <th>Port</th>
                                 <th>Device</th>
                                 <th>Browser</th>
                                 <th>OS</th>
+                                <th>Camera</th>
+                                <th>Location</th>
+                                <th>Screen</th>
+                                <th>Language</th>
+                                <th>Timezone</th>
                                 <th>Referrer</th>
                             </tr>
                         </thead>
@@ -722,26 +729,62 @@
                     // Display records table
                     const tableBody = document.getElementById('recordsTableBody');
                     if (records.length === 0) {
-                        tableBody.innerHTML = '<tr><td colspan="7" style="text-align: center; padding: 20px; color: #999;">No clicks yet</td></tr>';
+                        tableBody.innerHTML = '<tr><td colspan="14" style="text-align: center; padding: 20px; color: #999;">No clicks yet</td></tr>';
                     } else {
                         tableBody.innerHTML = records.slice().reverse().map(record => {
                             const date = new Date(record.timestamp);
                             const formattedDate = date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
-                            const location = record.city !== 'Unknown' 
+                            
+                            // IP-based location
+                            const ipLocation = record.city !== 'Unknown' 
                                 ? `${record.city}, ${record.country}`
                                 : record.country;
-                            const referrer = record.referrer === 'Direct' 
-                                ? '<span class="badge badge-info">Direct</span>'
-                                : `<span class="badge badge-primary">${escapeHtml(new URL(record.referrer).hostname)}</span>`;
+                            
+                            // GPS-based location
+                            const gpsLocation = record.userLatitude && record.userLongitude
+                                ? `${record.userLatitude.toFixed(4)}, ${record.userLongitude.toFixed(4)}`
+                                : 'N/A';
+                            
+                            // Referrer
+                            let referrer = '<span class="badge badge-info">Direct</span>';
+                            if (record.referrer !== 'Direct') {
+                                try {
+                                    referrer = `<span class="badge badge-primary">${escapeHtml(new URL(record.referrer).hostname)}</span>`;
+                                } catch (e) {
+                                    referrer = `<span class="badge badge-primary">${escapeHtml(record.referrer)}</span>`;
+                                }
+                            }
+                            
+                            // Permission badges
+                            const getCameraBadge = (perm) => {
+                                if (perm === 'granted') return '<span class="badge badge-success">✓ Granted</span>';
+                                if (perm === 'denied') return '<span class="badge" style="background:#ffebee;color:#c62828;">✗ Denied</span>';
+                                if (perm === 'pending') return '<span class="badge" style="background:#fff3e0;color:#f57c00;">⏳ Pending</span>';
+                                return '<span class="badge" style="background:#f5f5f5;color:#757575;">N/A</span>';
+                            };
+                            
+                            const getLocationBadge = (perm) => {
+                                if (perm === 'granted') return '<span class="badge badge-success">✓ Granted</span>';
+                                if (perm === 'denied') return '<span class="badge" style="background:#ffebee;color:#c62828;">✗ Denied</span>';
+                                if (perm === 'pending') return '<span class="badge" style="background:#fff3e0;color:#f57c00;">⏳ Pending</span>';
+                                return '<span class="badge" style="background:#f5f5f5;color:#757575;">N/A</span>';
+                            };
                             
                             return `
                                 <tr>
-                                    <td>${formattedDate}</td>
-                                    <td>${escapeHtml(location)}</td>
-                                    <td><code>${escapeHtml(record.ipAddress)}</code></td>
+                                    <td style="white-space: nowrap;">${formattedDate}</td>
+                                    <td>${escapeHtml(ipLocation)}</td>
+                                    <td style="font-family: monospace; font-size: 0.85em;">${gpsLocation}</td>
+                                    <td><code style="font-size: 0.85em;">${escapeHtml(record.ipAddress)}</code></td>
+                                    <td>${record.portNumber || 'N/A'}</td>
                                     <td><span class="badge badge-success">${escapeHtml(record.device)}</span></td>
                                     <td>${escapeHtml(record.browser)}</td>
                                     <td>${escapeHtml(record.os)}</td>
+                                    <td>${getCameraBadge(record.cameraPermission)}</td>
+                                    <td>${getLocationBadge(record.locationPermission)}</td>
+                                    <td style="font-size: 0.85em;">${record.screenResolution || 'N/A'}</td>
+                                    <td>${record.language || 'N/A'}</td>
+                                    <td style="font-size: 0.85em;">${record.timezone || 'N/A'}</td>
                                     <td>${referrer}</td>
                                 </tr>
                             `;
